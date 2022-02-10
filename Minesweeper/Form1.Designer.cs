@@ -52,7 +52,7 @@
             this.bStart.TabIndex = 0;
             this.bStart.Text = "Start";
             this.bStart.UseVisualStyleBackColor = true;
-            this.bStart.Click += new System.EventHandler(this.button1_Click);
+            this.bStart.Click += new System.EventHandler(this.Button1_Click);
             // 
             // label1
             // 

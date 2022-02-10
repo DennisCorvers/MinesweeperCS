@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -10,63 +11,42 @@ namespace Minesweeper
 {
     public class Field
     {
-        /// <summary>
-        /// An event that gets raised after the losing conditions have been met.
-        /// </summary>
-        public event GameWon eGameWon;
-        public delegate void GameWon();
-        /// <summary>
-        /// An event that gets raised after the winning conditions have been met.
-        /// </summary>
-        public event GameLost eGameLost;
-        public delegate void GameLost();
-        /// <summary>
-        /// An event that gets raised each time the player places or removes a flag.
-        /// </summary>
-        public event CounterChanged eCounterChanged;
-        public delegate void CounterChanged(int newCount);
+        public event Action OnGameWon;
+        public event Action OnGameLost;
+        public event Action<int> OnCounterChanged;
 
-        /// <summary>
-        /// A list of all of the squares on the field.
-        /// </summary>
-        public Dictionary<int, Dictionary<int, Square>> SquareCollection;
-        /// <summary>
-        /// A list of all of the empty squares on the field.
-        /// </summary>
-        private List<Square> EmptySquares;
-
-        private int _XSize;
-        private int _YSize;
-        private int _AmountOfMines;
-        private int _FlagsLeft;
+        private int m_emptySquaresLeft;
+        private int m_amountOfMines;
+        private int m_flagsLeft;
+        private bool m_firstClick;
+        public Square[] SquareCollection { get; }
 
         /// <summary>
         /// The XSize or width of the field,
         /// </summary>
         public int XSize
         {
-            get { return _XSize; }
-            set { _XSize = value < 5 ? 5 : value > 30 ? 30 : value; }
+            get; private set;
         }
         /// <summary>
         /// The YSize of height of the field.
         /// </summary>
         public int YSize
         {
-            get { return _YSize; }
-            set { _YSize = value < 5 ? 5 : value > 30 ? 30 : value; }
+            get; private set;
         }
         /// <summary>
         /// The current amount of mines on the field.
         /// </summary>
         public int AmountOfMines
         {
-            get { return _AmountOfMines; }
-            set
+            get { return m_amountOfMines; }
+            private set
             {
                 if (value >= XSize * YSize)
-                { _AmountOfMines = XSize * YSize - 1; }
-                else { _AmountOfMines = value < 1 ? 1 : value; }
+                    m_amountOfMines = XSize * YSize - 1;
+                else
+                    m_amountOfMines = value < 1 ? 1 : value;
             }
         }
         /// <summary>
@@ -74,18 +54,13 @@ namespace Minesweeper
         /// </summary>
         public int FlagsLeft
         {
-            get { return _FlagsLeft; }
-            set
+            get { return m_flagsLeft; }
+            private set
             {
-                _FlagsLeft = value < 0 ? 0 : value > AmountOfMines ? AmountOfMines : value;
-                if (eCounterChanged != null) { eCounterChanged(_FlagsLeft); }
+                m_flagsLeft = value < 0 ? 0 : value > AmountOfMines ? AmountOfMines : value;
+                OnCounterChanged?.Invoke(m_flagsLeft);
             }
         }
-
-        /// <summary>
-        /// Determines if the firstclick has occured yet. False after instantiating.
-        /// </summary>
-        private bool FirstClick;
 
         /// <summary>
         /// Creates a new playing field.
@@ -93,52 +68,72 @@ namespace Minesweeper
         /// <param name="xSize">The xSize or Width of the field.</param>
         /// <param name="ySize">The ySize of Height of the field.</param>
         /// <param name="amountOfMines">The amount of mines in the field.</param>
-        public Field(int xSize, int ySize, int amountOfMines)
+        public Field(int xSize, int ySize, int amountOfMines, Func<Point, Button> buttonFactory)
         {
+            if (xSize < 5 || xSize > 30)
+                throw new ArgumentOutOfRangeException(nameof(xSize), "XSize needs to be between 5 and 30.");
+
+            if (ySize < 5 || ySize > 30)
+                throw new ArgumentOutOfRangeException(nameof(ySize), "XSize needs to be between 5 and 30.");
+
             //Sets all of the properties.
             XSize = xSize;
             YSize = ySize;
             AmountOfMines = amountOfMines;
             FlagsLeft = AmountOfMines;
-            FirstClick = true;
+            m_firstClick = true;
 
-            //Creates a new squarecollection and list that keeps track of the empty (mine-less) squares.
-            SquareCollection = new Dictionary<int, Dictionary<int, Square>>();
-            EmptySquares = new List<Square>();
+            SquareCollection = new Square[XSize * YSize];
 
             //Creates squares based on the given width and heigth.
-            for (int x = 1; x < XSize + 1; x++)
+            for (int x = 0; x < XSize; x++)
             {
-                //Adds one X row.
-                SquareCollection.Add(x, new Dictionary<int, Square>());
-                for (int y = 1; y < YSize + 1; y++)
+                for (int y = 0; y < YSize; y++)
                 {
-                    Square S = new Square(new System.Drawing.Point(x, y), false);
-                    EmptySquares.Add(S);
-                    SquareCollection[x].Add(y, S);
+                    var location = new Point(x, y);
+                    var button = buttonFactory(location);
+                    var square = new Square(location, button, false);
+                    SquareCollection[(XSize * y) + x] = square;
 
                     //Adds events to the squares being clicked.
-                    S.LSQEvent += SquareLeftClicked;
-                    S.RSQEvent += SquareRightClicked;
+                    square.LSQEvent += SquareLeftClicked;
+                    square.RSQEvent += SquareRightClicked;
                 }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Square GetSquare(int x, int y)
+            => SquareCollection[(XSize * y) + x];
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryGetSquare(int x, int y, out Square value)
+        {
+            if (x < 0 || y < 0 || x >= XSize || y >= YSize)
+            {
+                value = default;
+                return false;
+            }
+
+            value = GetSquare(x, y);
+            return true;
         }
 
         /// <summary>
         /// Generates mines in the playing field. Only generates mines in a list of empty squares.
         /// </summary>
-        /// <param name="Amount"></param>
-        private void AddExtraMines(int Amount)
+        /// <param name="amount"></param>
+        private static void GenerateMines(IList<Square> emptySquares, int amount)
         {
             Random R = new Random();
-            while (Amount > 0)
+            while (amount > 0)
             {
                 //Picks a random square from the list of empty squares and fills it with a mine.
                 //Removes the square from the list after it has been given a mine.
-                int i = R.Next(0, EmptySquares.Count - 1);
-                EmptySquares[i].HasMine = true;
-                EmptySquares.RemoveAt(i);
-                Amount--;
+                int i = R.Next(0, emptySquares.Count - 1);
+                emptySquares[i].HasMine = true;
+                emptySquares.RemoveAt(i);
+                amount--;
             }
         }
         /// <summary>
@@ -148,178 +143,145 @@ namespace Minesweeper
         private void FirstClickGeneration(Square FirstSquare)
         {
             //Excludes the first clicked square from generation.
-            EmptySquares.Remove(FirstSquare);
+            var emptySquares = new List<Square>(SquareCollection);
+            emptySquares.Remove(FirstSquare);
 
 
             //Finds all 8 squares around the first click and excludes these from generation (if possible).
             int i = XSize * YSize - AmountOfMines - 1;
-            List<Square> FirstAdjacentSquares = LocateSurrounding(FirstSquare);
+            var FirstAdjacentSquares = LocateSurrounding(FirstSquare);
 
             foreach (Square S in FirstAdjacentSquares)
             {
-                if (i <= 0) { break; }
+                if (i <= 0)
+                    break;
                 //Excludes square from generation.
-                EmptySquares.Remove(S);
+                emptySquares.Remove(S);
                 i--;
             }
 
             //Adds mines to all available, empty squares.
-            AddExtraMines(this.AmountOfMines);
+            GenerateMines(emptySquares, AmountOfMines);
+            m_emptySquaresLeft = emptySquares.Count + 1;
 
             //Gets the surrounding mine count for empty squares on the field.
-            foreach (Square S in EmptySquares)
-            {
-                if (S == null) { continue; }
+            foreach (Square S in emptySquares)
                 S.SurroundingMines = CountSurroundingMines(S);
-            }
 
             //AFTER generation, count how many mines surround the first square.
             FirstSquare.SurroundingMines = CountSurroundingMines(FirstSquare);
             //Count all surrounding mines for the squares directly adjacent to the first square.
             foreach (Square S in FirstAdjacentSquares)
             {
-                if (S.HasMine) { continue; }
+                if (S.HasMine)
+                    continue;
                 S.SurroundingMines = CountSurroundingMines(S);
-                EmptySquares.Add(S);
+                m_emptySquaresLeft++;
             }
         }
 
         /// <summary>
         /// Counts the number of mines surrounding the given square.
         /// </summary>
-        /// <param name="S">The square from which you want to know the amount of adjacent mines.</param>
+        /// <param name="centerSquare">The square from which you want to know the amount of adjacent mines.</param>
         /// <returns></returns>
-        private int CountSurroundingMines(Square S)
-        { return LocateSurrounding(S).Count(x => x.HasMine); }
-
-        /// <summary>
-        /// Returns a square based on its location on the playing field.
-        /// </summary>
-        /// <param name="x">The x coordination of the square.</param>
-        /// <param name="y">The y coordination of the square.</param>
-        /// <returns></returns>
-        public Square GetSquare(int x, int y)
+        private int CountSurroundingMines(Square centerSquare)
         {
-            if (x < 1 || y < 1) { return null; }
-            if (x > XSize || y > YSize) { return null; }
+            int surroundingCount = 0;
+            ExecuteOnSurrounding(centerSquare, x =>
+            {
+                if (x.HasMine)
+                    surroundingCount++;
+            });
 
-            try
-            { return SquareCollection[x][y]; }
-            catch { return null; }
+            return surroundingCount;
         }
-        /// <summary>
-        /// Returns a square based on its location on the playing field.
-        /// </summary>
-        /// <param name="P">The point or coordinates of the square.</param>
-        /// <returns></returns>
-        public Square GetSquare(Point P)
-        { return GetSquare(P.X, P.Y); }
+
         /// <summary>
         /// Returns a list of all the squares surrounding the given square.
         /// </summary>
-        /// <param name="S">The square from which you want to find the surrounding squares.</param>
+        /// <param name="centerSquare">The square from which you want to find the surrounding squares.</param>
         /// <returns></returns>
-        public List<Square> LocateSurrounding(Square S)
+        private ICollection<Square> LocateSurrounding(Square centerSquare)
         {
-            List<Square> SurroundingSquares = new List<Square>();
-            List<Point> SurroundingPoints = new List<Point>();
-            #region Surroundingsquares
-            //Left-Up
-            SurroundingPoints.Add(new Point(S.Location.X - 1, S.Location.Y - 1));
-            //Up
-            SurroundingPoints.Add(new Point(S.Location.X, S.Location.Y - 1));
-            //Right-Up
-            SurroundingPoints.Add(new Point(S.Location.X + 1, S.Location.Y - 1));
-            //Left
-            SurroundingPoints.Add(new Point(S.Location.X - 1, S.Location.Y));
-            //Right
-            SurroundingPoints.Add(new Point(S.Location.X + 1, S.Location.Y));
-            //Left-Down
-            SurroundingPoints.Add(new Point(S.Location.X - 1, S.Location.Y + 1));
-            //Down
-            SurroundingPoints.Add(new Point(S.Location.X, S.Location.Y + 1));
-            //Right-Down
-            SurroundingPoints.Add(new Point(S.Location.X + 1, S.Location.Y + 1));
-            #endregion
+            var surroundingSquares = new List<Square>();
+            ExecuteOnSurrounding(centerSquare, x =>
+            {
+                if (!x.IsVisible)
+                    surroundingSquares.Add(x);
+            });
 
-            foreach (Point p in SurroundingPoints)
-            { SurroundingSquares.Add(GetSquare(p)); }
-
-            //Removes all instances that are null or already clicked.
-            SurroundingSquares.RemoveAll(x => x == null);
-            SurroundingSquares.RemoveAll(x => x.IsVisible);
-            return SurroundingSquares;
+            return surroundingSquares;
         }
 
-        /// <summary>
-        /// Handles left clicking on a square.
-        /// </summary>
-        /// <param name="S">The square matching the clicked button.</param>
-        /// <param name="B">The button that was left clicked.</param>
-        private void SquareLeftClicked(Square S, Button B)
+        private void ExecuteOnSurrounding(Square centerSquare, Action<Square> nextSquareDelegate)
         {
-            if (S == null) { return; }
-            if (B == null) { return; }
+            Square square;
+            // Left-Up
+            if (TryGetSquare(centerSquare.Location.X - 1, centerSquare.Location.Y - 1, out square)) nextSquareDelegate(square);
+            // Up
+            if (TryGetSquare(centerSquare.Location.X, centerSquare.Location.Y - 1, out square)) nextSquareDelegate(square);
+            // Right-Up
+            if (TryGetSquare(centerSquare.Location.X + 1, centerSquare.Location.Y - 1, out square)) nextSquareDelegate(square);
+            // Left
+            if (TryGetSquare(centerSquare.Location.X - 1, centerSquare.Location.Y, out square)) nextSquareDelegate(square);
+            // Right
+            if (TryGetSquare(centerSquare.Location.X + 1, centerSquare.Location.Y, out square)) nextSquareDelegate(square);
+            // Left-Down
+            if (TryGetSquare(centerSquare.Location.X - 1, centerSquare.Location.Y + 1, out square)) nextSquareDelegate(square);
+            // Down
+            if (TryGetSquare(centerSquare.Location.X, centerSquare.Location.Y + 1, out square)) nextSquareDelegate(square);
+            // Right-Down
+            if (TryGetSquare(centerSquare.Location.X + 1, centerSquare.Location.Y + 1, out square)) nextSquareDelegate(square);
+        }
 
+        private void SquareLeftClicked(Square square)
+        {
             //If this is the first square clicked, start generating mines around this point.
-            if (FirstClick)
+            if (m_firstClick)
             {
-                FirstClickGeneration(S);
-                FirstClick = false;
+                FirstClickGeneration(square);
+                m_firstClick = false;
             }
 
             //Removes events from this square since it's being clicked (and thus can't ever be clicked again).
-            S.LSQEvent -= SquareLeftClicked;
-            S.RSQEvent -= SquareRightClicked;
-            B.MouseClick -= S.SquareLeftClicked;
-            B.MouseUp -= S.SquareRightClicked;
+            square.LSQEvent -= SquareLeftClicked;
+            square.RSQEvent -= SquareRightClicked;
+            square.RemoveClickEvents();
 
             //If a mine is clicked, display where all the mines are and lose the game.
-            if (S.HasMine)
-            { ShowAllMines(); return; }
+            if (square.HasMine)
+            { LoseGame(); return; }
 
             //If the square is marked with a questionmark, remove it.
-            if(S.MarkState == SquareState.Question)
-            { B.BackgroundImage = null; }
+            if (square.MarkState == SquareState.Question)
+                square.SetImage(null);
 
             //Change button to appear clicked.
-            B.BackColor = ColorSettings.ClickedSQ;
-            B.ForeColor = ColorSettings.GetColor(S.SurroundingMines);
-            B.FlatStyle = FlatStyle.Flat;
-            B.Text = S.SurroundingMines == 0 ? "" : S.SurroundingMines.ToString();
-            EmptySquares.Remove(S);
-            S.IsVisible = true;
+            square.UpdateText();
+            m_emptySquaresLeft--;
+            square.IsVisible = true;
 
 
             //Checks all surrounding squares.
             //If THIS square is 0, all surrounding squares will be clicked regardless of values.
             //If the adjacent square is 0, but this square has another value, the adjacent square will be clicked.
-            List<Square> SurroundingSquares = LocateSurrounding(S);
+            var SurroundingSquares = LocateSurrounding(square);
             foreach (Square s in SurroundingSquares)
             {
-                if (S.SurroundingMines == 0)
-                { s.SquareLeftClicked(s.ButtonControl, new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0)); }
+                if (square.SurroundingMines == 0)
+                    s.SquareLeftClicked(null, new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0));
             }
 
             //If there are no empty squares left, win the game.
-            if(EmptySquares.Count<=0)
-            {
-                if(eGameWon!=null)
-                { eGameWon(); }
-            }
+            if (m_emptySquaresLeft <= 0)
+                OnGameWon?.Invoke();
         }
-        /// <summary>
-        /// Handles right clicking on a square.
-        /// </summary>
-        /// <param name="S">The square matching the clicked button.</param>
-        /// <param name="B">The button that was right clicked.</param>
-        private void SquareRightClicked(Square S, Button B)
-        {
-            if (S == null) { return; }
-            if (B == null) { return; }
 
+        private void SquareRightClicked(Square square)
+        {
             //Handles the different squarestates of the given square.
-            switch(S.MarkState)
+            switch (square.MarkState)
             {
                 //If the square is unmarked and clicked, flag the square.
                 case SquareState.Unmarked:
@@ -328,58 +290,44 @@ namespace Minesweeper
                         if (FlagsLeft > 0)
                         {
                             FlagsLeft--;
-                            B.BackgroundImage = ColorSettings.FlagImage;
-                            B.BackgroundImageLayout = ImageLayout.Stretch;
-                            S.MarkState = SquareState.Flagged;
+                            square.SetImage(ColorSettings.FlagImage);
+                            square.MarkState = SquareState.Flagged;
                         }
                         break;
                     }
                 //If the square is flagged and clicked, mark it with a questionmark.
                 case SquareState.Flagged:
                     {
-                        B.BackgroundImage = ColorSettings.QuestionMarkImage;
+                        square.SetImage(ColorSettings.QuestionMarkImage);
                         FlagsLeft++;
-                        S.MarkState = SquareState.Question;
+                        square.MarkState = SquareState.Question;
                         break;
                     }
                 //If the square is marked with a questionmark and clicked, unmark it.
                 case SquareState.Question:
                     {
-
-                        B.BackgroundImage = null;
-                        S.MarkState = SquareState.Unmarked;
+                        square.SetImage(null);
+                        square.MarkState = SquareState.Unmarked;
                         break;
                     }
             }
-
-            //If all the mines are marked, win the game.
-            //if (MinesLeft <= 0)
-            //{
-            //    if (eGameWon != null)
-            //    { eGameWon(); }
-            //}
         }
 
         /// <summary>
         /// Displays all mines and automatically raises a losegame event.
         /// </summary>
-        private void ShowAllMines()
+        private void LoseGame()
         {
             //Finds all squares with a mine and sets them to visible.
-            foreach(var XPair in SquareCollection)
+            foreach (var square in SquareCollection)
             {
-                foreach(var YPair in XPair.Value)
-                {
-                    if (!YPair.Value.HasMine) { continue; }
-                    //Sets the mines visible. This happens manually, not via an event.
-                    YPair.Value.ButtonControl.BackgroundImage = ColorSettings.MineImage;
-                    YPair.Value.ButtonControl.BackgroundImageLayout = ImageLayout.Stretch;
-                }
+                if (!square.HasMine)
+                    continue;
+
+                square.SetImage(ColorSettings.MineImage);
             }
 
-            //Loses the game.
-            if (eGameLost != null)
-            { eGameLost(); }
+            OnGameLost?.Invoke();
         }
     }
 }

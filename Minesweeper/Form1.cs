@@ -15,35 +15,35 @@ namespace Minesweeper
         /// <summary>
         /// The current playing field instance.
         /// </summary>
-        private Field F;
+        private Field m_field;
         /// <summary>
         /// The offset to the left of the playing field.
         /// </summary>
-        private int XoffSet = 20;
+        private const int XoffSet = 20;
         /// <summary>
         /// The offset to the top of the playing field.
         /// </summary>
-        private int YoffSet = 50;
+        private const int YoffSet = 50;
         /// <summary>
         /// The offset between the gamefield and the numeric controls.
         /// </summary>
-        private int numoffSet = 20;
+        private const int numoffSet = 20;
         /// <summary>
         /// The size of every square on the field.
         /// </summary>
-        private new int Size = 21;
+        private const int MySize = 21;
         /// <summary>
         /// A list of all of the buttons simulating a square.
         /// </summary>
         private List<Button> SquareFields;
-        private static int MinimumWidth = 275;
-        private static int MinimumHeight = 275;
+        private const int MinimumWidth = 275;
+        private const int MinimumHeight = 275;
 
         public Form1()
         {
             SquareFields = new List<Button>();
             InitializeComponent();
-            this.SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.DoubleBuffer, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.DoubleBuffer, true);
         }
 
         /// <summary>
@@ -51,21 +51,21 @@ namespace Minesweeper
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void button1_Click(object sender, EventArgs e)
+        private void Button1_Click(object sender, EventArgs e)
         {
-            this.gamepanel.SuspendLayout();
+            gamepanel.SuspendLayout();
 
             //Remove the GUI buttons from any last sessions.
             gamepanel.Visible = false;
             foreach (Button b in SquareFields)
-            { b.Dispose(); }
+                b.Dispose();
 
             SquareFields.Clear();
 
             GeneratePlayingField();
 
             gamepanel.Visible = true;
-            this.gamepanel.ResumeLayout();
+            gamepanel.ResumeLayout();
         }
 
         private void GeneratePlayingField()
@@ -74,37 +74,30 @@ namespace Minesweeper
             int ysize = Convert.ToInt32(numySize.Value);
             int mines = Convert.ToInt32(numMines.Value);
             //Create new field instance with all squares
-            F = new Field(xsize,ysize, mines);
-            F.eCounterChanged += UpdateCounter;
-            F.eGameLost += GameLost;
-            F.eGameWon += GameWon;
+            m_field = new Field(xsize, ysize, mines, CreateButtonForSquare);
+            m_field.OnCounterChanged += UpdateCounter;
+            m_field.OnGameLost += GameLost;
+            m_field.OnGameWon += GameWon;
 
-            SetupForm(F.XSize, F.YSize, F.AmountOfMines);
+            SetupForm(m_field.XSize, m_field.YSize, m_field.AmountOfMines);
+            gamepanel.Controls.AddRange(SquareFields.ToArray());
+        }
 
-            Font NewFont = new Font(FontFamily.GenericSansSerif, 8, FontStyle.Bold);
-            //Generate the GUI field with new controls.
-            foreach (var Xpair in F.SquareCollection)
+        private Button CreateButtonForSquare(Point location)
+        {
+            Button b = new Button
             {
-                foreach (var YPair in Xpair.Value)
-                {
-                    //Set all properties for the button.
-                    Button b = new Button();
-                    b.BackColor = ColorSettings.DefaultSQ;
-                    b.Location = new Point((YPair.Value.Location.X-1) * Size, (YPair.Value.Location.Y-1) * Size);
-                    b.Size = new Size(Size, Size);
-                    b.MouseClick += YPair.Value.SquareLeftClicked;
-                    b.MouseUp += YPair.Value.SquareRightClicked;
-                    b.FlatStyle = FlatStyle.Standard;
-                    b.FlatAppearance.BorderColor = Color.Black;
-                    b.Font = NewFont;
+                BackColor = ColorSettings.DefaultSQ,
+                Location = new Point((location.X) * MySize, (location.Y) * MySize),
+                Size = new Size(MySize, MySize)
+            };
+            b.FlatStyle = FlatStyle.Standard;
+            b.FlatAppearance.BorderColor = Color.Black;
+            b.Font = ColorSettings.ButtonFont;
 
-                    //Add a reference from the button to the square.
-                    YPair.Value.ButtonControl = b;
-                    SquareFields.Add(b);
-                }
-            }
+            SquareFields.Add(b);
 
-            this.gamepanel.Controls.AddRange(SquareFields.ToArray());
+            return b;
         }
 
         /// <summary>
@@ -119,32 +112,35 @@ namespace Minesweeper
             lMinesLeft.Text = Mines.ToString();
             Point PanelLocation = new Point(0, 0);
             Size FormSize = new Size(0, 0);
-            if (xSize * Size + XoffSet * 2 + 10 < MinimumWidth)
+            if (xSize * MySize + XoffSet * 2 + 10 < MinimumWidth)
             {
-                PanelLocation.X = MinimumWidth / 2 - (xSize * Size / 2) - 10;
+                PanelLocation.X = MinimumWidth / 2 - (xSize * MySize / 2) - 10;
                 FormSize.Width = MinimumWidth;
             }
             else
             {
                 PanelLocation.X = XoffSet;
-                FormSize.Width = xSize * Size + XoffSet * 2 + 10;
+                FormSize.Width = xSize * MySize + XoffSet * 2 + 10;
             }
-            if (ySize * Size + YoffSet + numoffSet + 40 > MinimumHeight)
-            { FormSize.Height = ySize * Size + numoffSet + 40 * 2 + YoffSet; }
+            if (ySize * MySize + YoffSet + numoffSet + 40 > MinimumHeight)
+                FormSize.Height = ySize * MySize + numoffSet + 40 * 2 + YoffSet;
             else
-            { FormSize.Height = MinimumHeight; }
+                FormSize.Height = MinimumHeight;
 
-            this.MinimumSize = FormSize;
-            this.MaximumSize = FormSize;
+            MinimumSize = FormSize;
+            MaximumSize = FormSize;
+
             numMines.Location = new Point(numMines.Location.X, FormSize.Height - 70);
             numxSize.Location = new Point(numxSize.Location.X, FormSize.Height - 70);
             numySize.Location = new Point(numySize.Location.X, FormSize.Height - 70);
+
             lxsize.Location = new Point(lxsize.Location.X, FormSize.Height - 86);
             lysize.Location = new Point(lysize.Location.X, FormSize.Height - 86);
             lmines.Location = new Point(lmines.Location.X, FormSize.Height - 86);
+
             PanelLocation.Y = YoffSet;
             gamepanel.Location = PanelLocation;
-            gamepanel.Size = new Size(xSize * Size, ySize * Size);
+            gamepanel.Size = new Size(xSize * MySize, ySize * MySize);
             gamepanel.BorderStyle = BorderStyle.None;
             gamepanel.Visible = true;
         }
@@ -156,43 +152,33 @@ namespace Minesweeper
         /// <param name="e"></param>
         private void NumericSizeChange(object sender, EventArgs e)
         {
-            if (!(sender is NumericUpDown)) { return; }
+            if (!(sender is NumericUpDown))
+                return;
+
             numMines.Maximum = numxSize.Value * numySize.Value - 1;
         }
 
-        /// <summary>
-        /// Updates the flag counter.
-        /// </summary>
-        /// <param name="FlagsLeft">The amount of flags left.</param>
         private void UpdateCounter(int FlagsLeft)
-        { lMinesLeft.Text = FlagsLeft.ToString(); }
-        /// <summary>
-        /// Handles events after winning the game.
-        /// </summary>
+            => lMinesLeft.Text = FlagsLeft.ToString();
+
         private void GameWon()
         {
-            F.eGameWon -= GameWon;
-            MessageBox.Show("All " + F.AmountOfMines.ToString() + " mines cleared!");
+            m_field.OnGameWon -= GameWon;
+            MessageBox.Show("All " + m_field.AmountOfMines.ToString() + " mines cleared!");
             DisableAllButtons();
         }
-        /// <summary>
-        /// Handles events after losing the game.
-        /// </summary>
+
         private void GameLost()
         {
-            F.eGameLost -= GameLost;
+            m_field.OnGameLost -= GameLost;
             MessageBox.Show("You lost! Try again!");
             DisableAllButtons();
         }
-        /// <summary>
-        /// Disables all of the squares after finishing a game.
-        /// </summary>
+
         private void DisableAllButtons()
         {
-            foreach(Button B in SquareFields)
-            {
+            foreach (Button B in SquareFields)
                 B.Enabled = false;
-            }
         }
     }
 }
